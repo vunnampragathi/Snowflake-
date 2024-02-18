@@ -1,0 +1,20 @@
+create database if not exists mydb1;
+create schema if not exists mydb1.cust_tables;
+create schema if not exists mydb1.cust_views;
+create table mydb1.cust_tables.customer1 as 
+select* from SNOWFLAKE_SAMPLE_DATA.TPCH_SF10.CUSTOMER
+
+select * from mydb1.cust_tables.customer1;
+create or replace share customer_datashare
+grant usage on database mydb1 to share customer_datashare
+grant select on table mydb1.cust_tables.customer1 to share customer_datashare
+show shares
+alter share customer_datashare add account=YJB54361
+
+
+###grant select on table mydb1.cust_tables.customer1 to account=YJB54361
+
+
+grant usage on schema mydb1.cust_tables to share customer_datashare
+
+desc share customer_datashare
