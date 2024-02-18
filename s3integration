@@ -1,0 +1,56 @@
+create or replace storage integration s3_int
+ TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = S3
+  ENABLED = TRUE
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::954161643634:role/testp'
+  STORAGE_ALLOWED_LOCATIONS = ('s3://privatepra/pipe/csv/', 's3://publicpra/pipe/csv/')
+  COMMENT = 'Integration with aws s3 buckets' ;
+
+
+ DESC integration s3_int;
+
+CREATE DATABASE IF NOT EXISTS MYDB;
+CREATE SCHEMA IF NOT EXISTS MYDB.file_formats_pipe_csv;
+
+ 
+ CREATE OR REPLACE file format mydb.file_formats_pipe_csv.csv_fileformat
+    type = csv
+    field_delimiter = ','
+    skip_header = 1
+    empty_field_as_null = TRUE; 
+
+
+   
+// Create stage object with integration object & file format object
+create schema if not exists external_stages;
+
+CREATE OR REPLACE STAGE mydb.external_stages.my_aws_s3_csv
+    URL = 's3://privatepra/pipe/csv/'
+    STORAGE_INTEGRATION = s3_int
+    FILE_FORMAT = mydb.file_formats_pipe_csv.csv_fileformat ; 
+
+
+ //Listing files under your s3 buckets
+list @mydb.external_stages.my_aws_s3_csv;  
+
+// creating the table
+CREATE OR REPLACE TABLE mydb.public.cust_pragathi(
+"C_CUSTOMER_SK" STRING,
+"C_CUSTOMER_ID" string
+);
+
+// creating schema for pipes
+create or replace schema mydb.pipes;
+
+// create a pipe
+create or replace pipe mydb.pipes.cust_pipe
+auto_ingest= true
+as
+copy into mydb.public.cust_pragathi
+from @mydb.external_stages.my_aws_s3_csv
+pattern='.*CUST.*';
+
+describe pipe mydb.pipes.cust_pipe
+
+
+select * from mydb.public.cust_pragathi
