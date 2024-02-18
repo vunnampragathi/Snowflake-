@@ -1,0 +1,35 @@
+create database if not exists mydb1;
+create schema if not exists mydb1.cust_tables;
+create schema mydb1.cust_views;
+create schema if not exists mydb.file_format;
+
+create or replace storage integration s3_int1
+ TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = S3
+  ENABLED = TRUE
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::954161643634:role/testp'
+  STORAGE_ALLOWED_LOCATIONS = ('s3://privatepra/pipe/csv/', 's3://publicpra/pipe/csv/')
+  COMMENT = 'Integration with aws s3 buckets' ;
+
+  desc integration s3_int1;
+
+
+CREATE OR REPLACE FILE FORMAT mydb.file_format.CSV_FILEFORMAT
+    type = csv
+    field_delimiter = ','
+    skip_header = 1
+    empty_field_as_null = TRUE;
+  
+CREATE OR REPLACE STAGE mydb.ext_stage.MYS3_OUTPUT
+    URL = 's3://privatepra/pipe/csv/'
+    STORAGE_INTEGRATION = s3_int
+    FILE_FORMAT = mydb.file_format.CSV_FILEFORMAT ;
+
+
+
+COPY INTO @mydb.ext_stage.MYS3_OUTPUT
+FROM MYDB.public.TT
+OVERWRITE = TRUE
+DETAILED_OUTPUT = TRUE ;  
+
+show tables like 'TT%';
