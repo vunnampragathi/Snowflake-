@@ -1,0 +1,1517 @@
+// Create a Database
+SNOWFLAKE.DATA_SHARING_USAGECREATE DATABASE IF NOT EXISTS MYDB;
+
+//Create a table with no cluster keys
+CREATE OR REPLACE TABLE PUBLIC.CUSTOMER_NONCLUSTER (
+ C_CUSTKEY NUMBER(38,0),
+ C_NAME VARCHAR(25),
+ C_ADDRESS VARCHAR(40),
+ C_NATIONKEY NUMBER(38,0),
+ C_PHONE VARCHAR(15),
+ C_ACCTBAL NUMBER(12,2),
+ C_MKTSEGMENT VARCHAR(10),
+ C_COMMENT VARCHAR(117)
+);
+
+// Insert data into above non-clustered table
+INSERT INTO PUBLIC.CUSTOMER_NONCLUSTER
+SELECT * FROM SAMPLE_DATA.TPCH_SF1000.CUSTOMER;
+
+//Create a table with cluster key
+CREATE OR REPLACE TABLE PUBLIC.CUSTOMER_CLUSTER (
+ C_CUSTKEY NUMBER(38,0),
+ C_NAME VARCHAR(25),
+ C_ADDRESS VARCHAR(40),
+ C_NATIONKEY NUMBER(38,0),
+ C_PHONE VARCHAR(15),
+ C_ACCTBAL NUMBER(12,2),
+ C_MKTSEGMENT VARCHAR(10),
+ C_COMMENT VARCHAR(117),
+ cluster by (C_NATIONKEY)
+);
+
+// Insert data into above clustered table
+INSERT INTO PUBLIC.CUSTOMER_CLUSTER
+SELECT * FROM SAMPLE_DATA.TPCH_SF1000.CUSTOMER;
+
+// Observe time taken and no.of partitions scanned
+SELECT * FROM PUBLIC.CUSTOMER_NONCLUSTER WHERE C_NATIONKEY=2; --  15 sec -- 420/420 mp scanned
+SELECT * FROM PUBLIC.CUSTOMER_CLUSTER WHERE C_NATIONKEY=2; -- 7 sec -- 22/482 mp scanned
+
+-----------------------
+
+CREATE OR REPLACE TABLE PUBLIC.ORDERS_NONCLUSTER
+AS SELECT * FROM SAMPLE_DATA.TPCH_SF100.ORDERS;
+
+CREATE OR REPLACE TABLE PUBLIC.ORDERS_CLUSTER
+AS SELECT * FROM SAMPLE_DATA.TPCH_SF100.ORDERS;
+
+// Add Cluster key to the table
+ALTER TABLE PUBLIC.ORDERS_CLUSTER CLUSTER BY (YEAR(O_ORDERDATE));
+
+// Observe time taken and no.of partitions scanned
+SELECT * FROM PUBLIC.ORDERS_NONCLUSTER WHERE YEAR(O_ORDERDATE) = 1995; -- 17 sec -- 87/229 mps
+SELECT * FROM PUBLIC.ORDERS_CLUSTER WHERE YEAR(O_ORDERDATE) = 1995; -- 11 sec -- 36/230 mps
+
+// Alter Table to add multiple cluster keys
+ALTER TABLE PUBLIC.ORDERS_CLUSTER CLUSTER BY (YEAR(O_ORDERDATE), O_ORDERPRIORITY);
+
+// Observe time taken and no.of partitions scanned
+SELECT * FROM PUBLIC.ORDERS_NONCLUSTER WHERE YEAR(O_ORDERDATE) = 1996 and O_ORDERPRIORITY = '1-URGENT'; -- 5.5sec -- 87/229
+SELECT * FROM PUBLIC.ORDERS_CLUSTER WHERE YEAR(O_ORDERDATE) = 1996 and O_ORDERPRIORITY = '1-URGENT'; -- 4.9sec -- 10/234
+
+// To Turn-off results cache
+ALTER SESSION SET USE_CACHED_RESULT = FALSE;
+
+//To look at clustering information
+SELECT SYSTEM$CLUSTERING_INFORMATION('ORDERS_CLUSTER');
+
+Cost types/cost depends on:
+Standard Edition:2.7/credit
+Enterprise:4/credit
+Business critical-5.4/credit
+Virtual private snowflake
+
+Region
+cloud paltform where account is hosted
+Virtual warehouse size
+
+Storage Cost
+compute Cost
+cloud services COST
+
+Storage:
+
+On demand-as you use you charge 1TB/$40
+Capacity or fixed Storage 1TB/$23
+100GB-0.1 TB
+first we need to start with On demand . once our application is stable then switch to Capacity storage to save the dollars
+compute cost:
+ 
+depends on virtual warehouse usage per month
+Billed per seconds with 1 minute minimum
+Credit usgae per hour:
+
+xsmall-1 credit per hour
+small-2credit per hour
+medium-4 credit
+large-8
+XL-16
+2xL-32
+3XL-64
+4XL-128
+5XL-256
+6XL-512
+
+cost optimization
+choose appropriate Edition
+start with On demand then capacity Storage
+Choose WH
+Dev-xs with 2 clusters
+Test-Xs with 4 clusters or s with 2 clusters
+prd-m or L
+
+Small queries-choose smallest size with more number of clusters
+Few big queries on large data sets-choose large size with less clusters
+many big queries-choose Lagre size with more clusters
+
+table stypes:
+Transient tables for STGing
+Transient tables for intermeduiate data processings
+less data retention periods
+use cloing effectively
+turn off time travel before dropping the table
+make use of results cache
+use auto suspend timouts based query frequency
+
+Performance optimization:
+Define cluster keys
+Define cluster keys on large tables not in small tables
+define cluster keys on most frequently used columns as filter
+define cluster keys on Join key
+define  cluster keys on function based on columns
+select required columns
+replace or with UNION
+union all is always beteer if there are no duplicates on data
+avoid unneccessray joins
+avoid distinct if you are sure no duplicates
+
+Dataloading:
+Load types:
+Bulk loading->copy
+continuous loading->Snow pipe
+
+Copy Command:
+Copy into table name from @Stage
+file_format=(...)
+files=(filename1,filename2)
+(or)
+pattern='.*filepattern.*'
+other_optional_props;
+
+Location of files:
+Local Env:files are first staged in Snowflake stage the loaded into table
+AWS S3:Files can be loaded directly from any s3 bucket
+GCP-files can be loaded directly from any cloud storgae container
+Azure-files can beloaded directly from any azure container
+
+File types:
+CSV,TSV,JSON,AVRO,ORC,PARQUET,XML
+
+Simple Transformations:
+Column reordering
+column omisiion
+string operations
+Other functions
+sequence Numbers
+Auto increment fields
+
+
+/Create database
+CREATE DATABASE IF NOT EXISTS MYDB;
+USE DATABASE MYDB;
+
+//Creating the table
+CREATE OR REPLACE TABLE MYDB.PUBLIC.cust_pragathi(
+"C_CUSTOMER_SK" STRING,
+"C_CUSTOMER_ID" STRING
+);
+
+select * from cust_pragathi;
+
+
+
+//Loading the data from S3 bucket
+COPY INTO PUBLIC.cust_pragathi
+    FROM s3://publicbucket3p/CUST.csv
+    file_format = (type = csv , field_delimiter = ',' , skip_header=1);    
+
+  
+    
+//Validate the data
+SELECT * FROM PUBLIC.cust_pragathi;
+
+//Check the count
+SELECT COUNT(*) FROM PUBLIC.cust_pragathi; -- 500
+
+============
+Transforming Data while Loading
+===============
+// Create a Schema for External Stages
+
+CREATE OR REPLACE SCHEMA MYDB.external_stages;
+
+// Publicly accessible staging area    
+CREATE OR REPLACE STAGE MYDB.external_stages.aws_ext_stage
+    url='s3://bucketsnowflakes3';
+    bucketsnowflakes3p
+CREATE OR REPLACE STAGE MYDB.external_stages.aws_ext_stage
+    url='s3://bucketsnowflakes3p';
+
+// listing the files in external stage
+list @MYDB.external_stages.aws_ext_stage;
+
+//Case 1: Just Viewing Data from ext stage
+// $ represents the column number
+select $1, $2, $3, $4, $5, $6 from @MYDB.external_stages.aws_ext_stage/OrderDetails.csv;
+
+//Giving Alias Names to fields
+select $1 as OID, $2 as AMT, $3 as PFT, $4 as QNT, $5 as CAT, $6 as SUBCAT
+from @MYDB.external_stages.aws_ext_stage/OrderDetails.csv;
+
+select $1 as OID, $4 as QNT, $2 as AMT from @MYDB.external_stages.aws_ext_stage/OrderDetails.csv;
+ 
+
+// Transforming Data while loading
+// transformations: 4(cleaning,aggregation,    
+// Case 2: load only required fields
+
+CREATE OR REPLACE TABLE MYDB.PUBLIC.ORDERS_EX (
+    ORDER_ID VARCHAR(30),
+    AMOUNT INT
+    );
+ 
+COPY INTO MYDB.PUBLIC.ORDERS_EX
+    FROM (select s.$1, s.$2 from @MYDB.external_stages.aws_ext_stage s)
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    files=('OrderDetails.csv');    
+
+SELECT * FROM MYDB.PUBLIC.ORDERS_EX;
+
+ 
+// Case3: applying basic transformation by using functions
+
+CREATE OR REPLACE TABLE MYDB.PUBLIC.ORDERS_EX (
+    ORDER_ID VARCHAR(30),
+    PROFIT INT,
+ AMOUNT INT,    
+    CAT_SUBSTR VARCHAR(5),
+    CAT_CONCAT VARCHAR(60),
+ PFT_OR_LOSS VARCHAR(10)
+  );
+
+//Copy Command using a SQL function
+COPY INTO MYDB.PUBLIC.ORDERS_EX
+    FROM (select
+            s.$1,
+            s.$3,
+   s.$2,
+            substring(s.$5,1,5),
+            concat($5,$6), -- or simply $5||$6
+            CASE WHEN s.$3 less_than= 0 THEN 'LOSS' ELSE 'PROFIT' END
+          FROM @MYDB.external_stages.aws_ext_stage s)
+ file_format= (type = csv field_delimiter=',' skip_header=1)
+ FILES=('OrderDetails.csv');
+
+SELECT * FROM MYDB.PUBLIC.ORDERS_EX;
+
+// Case 4: Loading sequence numbers in columns
+
+// Create a sequence
+create sequence seq1;
+
+CREATE OR REPLACE TABLE MYDB.PUBLIC.LOAN_PAYMENT (
+  "SEQ_ID" number default seq1.nextval,
+  "Loan_ID" STRING,
+  "loan_status" STRING,
+  "Principal" STRING,
+  "terms" STRING,
+  "effective_date" STRING,
+  "due_date" STRING,
+  "paid_off_time" STRING,
+  "past_due_days" STRING,
+  "age" STRING,
+  "education" STRING,
+  "Gender" STRING
+ );
+ 
+//Loading the data from S3 bucket
+COPY INTO PUBLIC.LOAN_PAYMENT("Loan_ID", "loan_status", "Principal", "terms", "effective_date", "due_date",
+"paid_off_time", "past_due_days", "age", "education", "Gender")
+    FROM s3://bucketsnowflakes3/Loan_payments_data.csv
+    file_format = (type = csv  field_delimiter = ','  skip_header=1);  
+       
+//Validate the data
+SELECT * FROM PUBLIC.LOAN_PAYMENT;
+
+
+// Case 5: Using auto increment
+
+CREATE OR REPLACE TABLE MYDB.PUBLIC.LOAN_PAYMENT2 (
+  "LOAN_SEQ_ID" number autoincrement start 1001 increment 1,
+  "Loan_ID" STRING,
+  "loan_status" STRING,
+  "Principal" STRING,
+  "terms" STRING,
+  "effective_date" STRING,
+  "due_date" STRING,
+  "paid_off_time" STRING,
+  "past_due_days" STRING,
+  "age" STRING,
+  "education" STRING,
+  "Gender" STRING
+ );
+ 
+//Loading the data from S3 bucket
+COPY INTO PUBLIC.LOAN_PAYMENT2("Loan_ID", "loan_status", "Principal", "terms", "effective_date", "due_date",
+"paid_off_time", "past_due_days", "age", "education", "Gender")
+    FROM s3://bucketsnowflakes3/Loan_payments_data.csv
+    file_format = (type = csv  field_delimiter = ','  skip_header=1);  
+       
+//Validate the data
+SELECT * FROM PUBLIC.LOAN_PAYMENT2;
+
+*******************************************
+// Create Database and schema.
+
+CREATE DATABASE IF NOT EXISTS MYDB;
+CREATE SCHEMA IF NOT EXISTS external_stages;
+
+// Publicly accessible staging area    
+CREATE OR REPLACE STAGE MYDB.external_stages.sample_stage
+    url='s3://bucketsnowflakes3';
+
+// Description of external stage
+DESC STAGE MYDB.external_stages.sample_stage;    
+   
+// List files in stage
+LIST @external_stages.sample_stage;
+
+
+// Creating ORDERS table
+CREATE OR REPLACE TABLE MYDB.PUBLIC.ORDERS (
+    ORDER_ID VARCHAR(30),
+    AMOUNT INT,
+    PROFIT INT,
+    QUANTITY INT,
+    CATEGORY VARCHAR(30),
+    SUBCATEGORY VARCHAR(30));
+   
+SELECT * FROM MYDB.PUBLIC.ORDERS;
+
+//Load data using copy command
+
+// Copy command with specified file(s)
+
+COPY INTO MYDB.PUBLIC.ORDERS
+    FROM @MYDB.external_stages.sample_stage
+    file_format = (type = csv field_delimiter=',' skip_header=1)
+    files = ('OrderDetails.csv');
+   
+SELECT * FROM MYDB.PUBLIC.ORDERS;
+
+
+// Copy command with pattern for file names
+
+COPY INTO MYDB.PUBLIC.ORDERS
+    FROM @MYDB.external_stages.sample_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*';
+   
+SELECT * FROM MYDB.PUBLIC.ORDERS;
+ 
+============
+File Formats
+=============
+
+// Creating schema to keep file formats
+CREATE SCHEMA IF NOT EXISTS MYDB.file_formats;
+
+// Creating file format object
+CREATE file format MYDB.file_formats.csv_file_format;
+
+// See properties of file format object
+DESC file format MYDB.file_formats.csv_file_format;
+
+
+// Creating table
+CREATE OR REPLACE TABLE MYDB.PUBLIC.ORDERS_EX (
+    ORDER_ID VARCHAR(30),
+    AMOUNT INT,
+    PROFIT INT,
+    QUANTITY INT,
+    CATEGORY VARCHAR(30),
+    SUBCATEGORY VARCHAR(30)
+);
+
+// Using file format object in Copy command      
+COPY INTO MYDB.PUBLIC.ORDERS_EX
+    FROM @MYDB.external_stages.sample_stage
+    file_format= (FORMAT_NAME = MYDB.file_formats.csv_file_format)
+    files = ('OrderDetails.csv');
+
+   
+// Altering file format object
+ALTER file format MYDB.file_formats.csv_file_format
+    SET SKIP_HEADER = 1;
+   
+DESC file format MYDB.file_formats.csv_file_format;
+
+ 
+// Using file format object in Copy command      
+COPY INTO MYDB.PUBLIC.ORDERS_EX
+    FROM @MYDB.external_stages.sample_stage
+    file_format= (FORMAT_NAME=MYDB.file_formats.csv_file_format)
+    files = ('OrderDetails.csv');
+   
+select * from MYDB.PUBLIC.ORDERS_EX;
+**************************************
+Stages:
+Internal Stages
+External stages
+Amazon S3
+GCP-files
+Azure
+
+Create or replace stage DB.ExternalStorage (Schema).stage name
+**********************************************************************
+// Create storage integration object
+create or replace storage integration s3_int
+  TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = S3
+  ENABLED = TRUE
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::905418220524:role/awss3snowflakeint'arn:aws:iam::905418220524:role/awss3snowflakeint
+  STORAGE_ALLOWED_LOCATIONS = ('s3://bucket-name/path/', 's3://bucket-name/path/')
+  COMMENT = 'Integration with aws s3 buckets' ;
+   
+   
+// Get external_id and update it in S3
+DESC integration s3_int;
+
+// ARN -- Amazon Resource Names
+// S3 -- Simple Storage Service
+// IAM -- Identity and Access Management
+
+-----------------------------------
+// Create database and schema
+CREATE DATABASE IF NOT EXISTS MYDB;
+CREATE SCHEMA IF NOT EXISTS MYDB.file_formats;
+
+// Create file format object
+CREATE OR REPLACE file format mydb.file_formats.csv_fileformat
+    type = csv
+    field_delimiter = '|'
+    skip_header = 1
+    empty_field_as_null = TRUE;    
+   
+// Create stage object with integration object & file format object
+CREATE OR REPLACE STAGE mydb.external_stages.aws_s3_csv
+    URL = 's3://awss3bucketjana/csv/'
+    STORAGE_INTEGRATION = s3_int
+    FILE_FORMAT = mydb.file_formats.csv_fileformat ;
+
+//Listing files under your s3 buckets
+list @mydb.external_stages.aws_s3_csv;
+
+
+// Create a table first
+CREATE OR REPLACE TABLE mydb.public.customer_data (
+customerid NUMBER,
+custname STRING,
+email STRING,
+city STRING,
+state STRING,
+DOB DATE
+);
+
+// Use Copy command to load the files
+COPY INTO mydb.public.customer_data
+    FROM @mydb.external_stages.aws_s3_csv
+    PATTERN = '.*customer.*';    
+ 
+//Validate the data
+SELECT * FROM mydb.public.customer_data;
+
+*********************************
+User Stage @~
+Table Stage @%
+Named Stage @
+
+Put command is used to copy the file from Insternal Stage to Snowflake
+copy command used to load the data into table
+
+
+*******************************************
+
+/Login to snowflake from Snowsql client
+snowsql -a ed52115.us-east-2.aws
+
+snowsql -a qwb81195.us-east-1
+
+//Enter user name and passowrd
+
+//Running queries
+SELECT * FROM mydb.public.EMP;
+
+USE WAREHOUSE SAMPLE_WH;
+
+USE DATABASE MYDB;
+
+USE SCHEMA PUBLIC;
+
+SELECT * FROM EMP;
+
+
+// USER STAGE
+//Put your files into user internal stage
+//If your put command is failing with 403 forbidden error, practice this session after AWS-Snowflake integration session(next video in the play list) then it will work.
+
+put file://C:\Users\janar\OneDrive\Documents\Files\pets_data.json @~/staged;
+
+put file://C:\Users\janar\OneDrive\Documents\Files\customer_data_user.csv @~/staged;
+
+list @~/staged;
+
+
+// TABLE STAGE
+//Put your files into table internal stage
+put file://C:\Users\janar\OneDrive\Documents\Files\customer_data_table.csv @%customer_data_table;
+
+//Create customer_data_table to load files from internal stages
+CREATE OR REPLACE TABLE mydb.public.customer_data_table (
+customerid NUMBER,
+custname STRING,
+email STRING,
+city STRING,
+state STRING,
+DOB DATE
+);
+
+put file://C:\Users\janar\OneDrive\Documents\Files\customer_data_table.csv @%customer_data_table;
+
+list @%customer_data_table;
+
+
+//Named Stage
+// Create a schema for internal stages
+CREATE SCHEMA IF NOT EXISTS mydb.internal_stages
+
+//Create a named stage
+CREATE OR REPLACE STAGE mydb.internal_stages.named_customer_stage;
+
+CREATE OR REPLACE STAGE mydb.internal_stages.named_orders_stage;
+
+CREATE OR REPLACE STAGE mydb.internal_stages.named_product_stage;
+
+show stages in mydb.internal_stages;
+
+//Put your files into named internal stage
+put file://C:\Users\janar\OneDrive\Documents\Files\customer_data_named.csv @mydb.internal_stages.named_customer_stage;
+
+list @mydb.internal_stages.named_customer_stage;
+
+
+// Load all files data to the table
+//Copy all these files to table customer_data_table
+
+COPY INTO mydb.public.customer_data_table
+FROM @~/staged/customer_data_user.csv
+file_format = (type = csv field_delimiter = '|' skip_header = 1);
+
+COPY INTO mydb.public.customer_data_table
+FROM @%customer_data_table/customer_data_table.csv
+file_format = (type = csv field_delimiter = '|' skip_header = 1);
+
+COPY INTO mydb.public.customer_data_table
+FROM @mydb.internal_stages.named_customer_stage/customer_data_named.csv
+file_format = (type = csv field_delimiter = '|' skip_header = 1);
+
+
+//Validate the data
+SELECT * FROM mydb.public.customer_data_table;
+*********************************************************
+// Create required Database/Schemas
+CREATE DATABASE IF NOT EXISTS MYDB;
+CREATE SCHEMA IF NOT EXISTS  MYDB.EXT_STAGES
+
+1.VALIDATION_MODE
+-------------
+// Create table
+CREATE OR REPLACE TABLE  MYDB.PUBLIC.TBL_ORDERS (
+    ORDER_ID VARCHAR(30),
+    AMOUNT VARCHAR(30),
+    PROFIT INT,
+    QUANTITY INT,
+    CATEGORY VARCHAR(30),
+    SUBCATEGORY VARCHAR(30));
+
+// Case 1: Files without errors
+// Create Stage Object
+CREATE OR REPLACE STAGE MYDB.EXT_STAGES.sample_aws_stage
+    url='s3://snowflakebucket-copyoption/size/';
+ 
+LIST @MYDB.EXT_STAGES.sample_aws_stage;  
+   
+ //Load data using copy command
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+    VALIDATION_MODE = RETURN_ERRORS;    
+   
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+   VALIDATION_MODE = RETURN_10_ROWS ;
+   
+// Case 2: Files with errors
+// Create Stage Object
+CREATE OR REPLACE STAGE MYDB.EXT_STAGES.sample_aws_stage2
+    url='s3://snowflakebucket-copyoption/returnfailed/';
+ 
+LIST @MYDB.EXT_STAGES.sample_aws_stage2;  
+   
+ //Load data using copy command
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage2
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+    VALIDATION_MODE = RETURN_ERRORS;    
+   
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage2
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+   VALIDATION_MODE = RETURN_10_ROWS ;  
+   
+2.RETURN_FAILED_ONLY
+------------------
+//Create table with above DDL
+
+// Create Stage Object
+CREATE OR REPLACE STAGE MYDB.EXT_STAGES.sample_aws_stage
+    url='s3://snowflakebucket-copyoption/returnfailed/';
+ 
+LIST @MYDB.EXT_STAGES.sample_aws_stage  
+   
+//Load data using copy command
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+    RETURN_FAILED_ONLY = TRUE;
+
+3.ON_ERROR
+-------
+// Create table with above DDL
+ 
+// Create Stage Object
+CREATE OR REPLACE STAGE MYDB.EXT_STAGES.sample_aws_stage
+    url='s3://snowflakebucket-copyoption/returnfailed/';
+ 
+LIST @MYDB.EXT_STAGES.sample_aws_stage
+
+// First try without ON_ERROR property
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*';
+ 
+// Now try with ON_ERROR=CONTINUE
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+    ON_ERROR = CONTINUE;
+ 
+4.FORCE
+--------
+// Create table with above DDL
+
+// Create Stage Object
+CREATE OR REPLACE STAGE MYDB.EXT_STAGES.sample_aws_stage
+    url='s3://snowflakebucket-copyoption/size/';
+ 
+LIST @MYDB.EXT_STAGES.sample_aws_stage;  
+   
+ //Load data using copy command
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*';
+
+// Try to load same file, copy command will not fail but just skips the file
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*';
+   
+SELECT * FROM TBL_ORDERS;    
+
+// Try Using the FORCE option, the file will be loaded again
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+    FORCE = TRUE;
+   
+SELECT * FROM PUBLIC.TBL_ORDERS;
+
+5.TRUNCATE COLUMNS
+---------------
+CREATE OR REPLACE TABLE  MYDB.PUBLIC.TBL_ORDERS (
+    ORDER_ID VARCHAR(30),
+    AMOUNT VARCHAR(30),
+    PROFIT INT,
+    QUANTITY INT,
+    CATEGORY VARCHAR(10),
+    SUBCATEGORY VARCHAR(30));
+
+// Create Stage Object
+CREATE OR REPLACE STAGE MYDB.EXT_STAGES.sample_aws_stage
+    url='s3://snowflakebucket-copyoption/size/';
+ 
+LIST @MYDB.EXT_STAGES.sample_aws_stage;  
+   
+ //Load data using copy command
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*';
+
+//With TRUNCATECOLUMNS property
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+    TRUNCATECOLUMNS = TRUE;
+   
+SELECT * FROM PUBLIC.TBL_ORDERS;
+
+6.SIZE_LIMIT
+---------
+// Create table, stage object and then run below query
+
+//Load data using copy command
+COPY INTO MYDB.PUBLIC.TBL_ORDERS
+    FROM @sample_aws_stage
+    file_format= (type = csv field_delimiter=',' skip_header=1)
+    pattern='.*Order.*'
+    SIZE_LIMIT=30000;
+
+***************************************************************************
+Missed Flattening in explanation, but available in below queries
+
+-- Processing semi-structured data (Ex.JSON Data)
+
+--Creating required schemas
+CREATE OR REPLACE SCHEMA MYOWN_DB.external_stages;
+CREATE OR REPLACE SCHEMA MYOWN_DB.STAGE_TBLS;
+CREATE OR REPLACE SCHEMA MYOWN_DB.INTG_TBLS;
+
+--Creating file format object
+CREATE OR REPLACE FILE FORMAT MYOWN_DB.file_formats.FILE_FORMAT_JSON
+ TYPE = JSON;
+
+--Creating stage object
+CREATE OR REPLACE STAGE MYOWN_DB.external_stages.STAGE_JSON
+    STORAGE_INTEGRATION = s3_int
+    URL = 's3://awss3bucketjana/json/';
+
+--Listing files in the stage
+LIST @MYOWN_DB.external_stages.STAGE_JSON;
+
+--Creating Stage Table to store RAW Data
+CREATE OR REPLACE TABLE MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW
+(raw_file variant);
+
+
+--Copy the RAW data into a Stage Table
+COPY INTO MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW
+    FROM @MYOWN_DB.external_stages.STAGE_JSON
+    file_format= MYOWN_DB.file_formats.FILE_FORMAT_JSON
+    FILES=('pets_data.json');
+
+--View RAW table data
+SELECT * FROM MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW;
+
+--Extracting single column
+SELECT raw_file:Name::string as Name FROM MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW;
+
+--Extracting Array data
+SELECT raw_file:Name::string as Name,
+       raw_file:Pets[0]::string as Pet
+FROM MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW;
+
+--Get the size of ARRAY
+SELECT raw_file:Name::string as Name, ARRAY_SIZE(RAW_FILE:Pets) as PETS_AR_SIZE
+FROM MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW;
+
+SELECT max(ARRAY_SIZE(RAW_FILE:Pets)) as PETS_AR_SIZE
+FROM MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW;
+
+--Extracting nested data
+SELECT raw_file:Name::string as Name,
+       raw_file:Address."House Number"::string as House_No,
+       raw_file:Address.City::string as City,
+       raw_file:Address.State::string as State
+FROM MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW;
+
+--Parsing entire file
+SELECT raw_file:Name::string as Name,
+       raw_file:Gender::string as Gender,
+       raw_file:DOB::date as DOB,
+       raw_file:Pets[0]::string as Pets,
+       raw_file:Address."House Number"::string as House_No,
+    raw_file:Address.City::string as City,
+    raw_file:Address.State::string as State,
+    raw_file:Phone.Work::number as Work_Phone,
+    raw_file:Phone.Mobile::number as Mobile_Phone
+from MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW
+UNION ALL
+SELECT raw_file:Name::string as Name,
+       raw_file:Gender::string as Gender,
+       raw_file:DOB::date as DOB,
+       raw_file:Pets[1]::string as Pets,
+       raw_file:Address."House Number"::string as House_No,
+    raw_file:Address.City::string as City,
+    raw_file:Address.State::string as State,
+    raw_file:Phone.Work::number as Work_Phone,
+    raw_file:Phone.Mobile::number as Mobile_Phone
+from MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW
+UNION ALL
+SELECT raw_file:Name::string as Name,
+       raw_file:Gender::string as Gender,
+       raw_file:DOB::date as DOB,
+       raw_file:Pets[2]::string as Pets,
+       raw_file:Address."House Number"::string as House_No,
+    raw_file:Address.City::string as City,
+    raw_file:Address.State::string as State,
+    raw_file:Phone.Work::number as Work_Phone,
+    raw_file:Phone.Mobile::number as Mobile_Phone
+from MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW
+WHERE Pets is not null;
+
+--Creating/Loading parsed data to another table
+CREATE TABLE MYOWN_DB.INTG_TBLS.PETS_DATA
+AS
+ABOVE SELECT STATEMENT
+
+--Viewing final data
+SELECT * from MYOWN_DB.INTG_TBLS.PETS_DATA;
+
+--Truncate and Reload by using flatten
+
+TRUNCATE TABLE MYOWN_DB.INTG_TBLS.PETS_DATA;
+
+INSERT INTO MYOWN_DB.INTG_TBLS.PETS_DATA
+select  
+       raw_file:Name::string as Name,
+       raw_file:Gender::string as Gender,
+       raw_file:DOB::date as DOB,
+       f1.value::string as Pet,
+       raw_file:Address."House Number"::string as House_No,
+    raw_file:Address.City::string as City,
+    raw_file:Address.State::string as State,
+    raw_file:Phone.Work::number as Work_Phone,
+    raw_file:Phone.Mobile::number as Mobile_Phone
+FROM MYOWN_DB.STAGE_TBLS.PETS_DATA_JSON_RAW,
+table(flatten(raw_file:Pets)) f1;
+
+
+--Viewing final data
+SELECT * from MYOWN_DB.INTG_TBLS.PETS_DATA;
+***************************************************************
+// Create database and schemas if not exists already
+CREATE DATABASE IF NOT EXISTS MYDB;
+CREATE SCHEMA IF NOT EXISTS MYDB.file_formats;
+CREATE SCHEMA IF NOT EXISTS MYDB.external_stages;
+
+//Alter your storage integration
+alter storage integration s3_int
+set STORAGE_ALLOWED_LOCATIONS = ('s3://awss3bucketjana/csv/', 's3://awss3bucketjana/json/','s3://awss3bucketjana/pipes/csv/');
+
+(or)
+
+create or replace storage integration s3_int
+  TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = S3
+  ENABLED = TRUE
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::555064756008:role/snowflake_access_role'
+  STORAGE_ALLOWED_LOCATIONS = ('s3://awss3bucketjana/csv/', 's3://awss3bucketjana/json/','s3://awss3bucketjana/pipes/csv/')
+  COMMENT = 'Integration with aws s3 buckets' ;
+ 
+// Create a file format object of csv type
+CREATE OR REPLACE file format mydb.file_formats.csv_fileformat
+    type = csv
+    field_delimiter = ','
+    skip_header = 1
+    empty_field_as_null = TRUE;
+
+// Create a stage object using storage integration
+CREATE OR REPLACE stage mydb.external_stages.stage_aws_pipes
+    URL = 's3://awss3bucketjana/pipes/csv/'
+    STORAGE_INTEGRATION = s3_int
+    FILE_FORMAT = mydb.file_formats.csv_fileformat;  
+
+// List the files in Stage
+LIST @mydb.external_stages.stage_aws_pipes;
+
+ 
+// Create a table to load these files
+CREATE OR REPLACE TABLE mydb.public.emp_data
+(
+  id INT,
+  first_name STRING,
+  last_name STRING,
+  email STRING,
+  location STRING,
+  department STRING
+);
+ 
+
+// Create a schema to keep pipe objects
+CREATE OR REPLACE SCHEMA mydb.pipes;
+
+// Create a pipe
+CREATE OR REPLACE pipe mydb.pipes.employee_pipe
+AUTO_INGEST = TRUE
+AS
+COPY INTO mydb.public.emp_data
+FROM @mydb.external_stages.stage_aws_pipes
+pattern = '.*employee.*';
+
+// Describe pipe to get ARN
+DESC pipe employee_pipe;
+
+// Get Notification channel ARN and update the same in event notifications SQS queue
+ 
+// Upload the file and verify the data in the table after a minute
+SELECT * FROM mydb.public.emp_data;
+
+create a pipe
+alter pipe
+drop pipe
+describe pipe
+show pipes
+
+************************************************************************
+
+//Change the delimeter from ',' to '|'
+CREATE OR REPLACE file format mydb.file_formats.csv_fileformat
+    type = csv
+    field_delimiter = '|'
+    skip_header = 1
+    empty_field_as_null = TRUE;
+ 
+// Test the copy command
+COPY INTO mydb.public.emp_data
+FROM @mydb.external_stages.stage_aws_pipes
+pattern = '.*employee.*';
+
+// Check data loaded in the table or not
+SELECT * FROM mydb.public.emp_data;
+
+
+// Step1: Validate pipe is actually working or not
+SELECT SYSTEM$PIPE_STATUS('employee_pipe');
+
+
+// Step2: Check the Copy History
+SELECT * FROM TABLE( INFORMATION_SCHEMA.COPY_HISTORY
+ (TABLE_NAME  ='greaterthan_symbol'  'mydb.public.emp_data',
+  START_TIME ='greaterthan_symbol' DATEADD(HOUR, -10 ,CURRENT_TIMESTAMP()))
+);
+
+
+// Step3: Validate the pipe load
+SELECT * FROM TABLE(INFORMATION_SCHEMA.VALIDATE_PIPE_LOAD
+ (PIPE_NAME ='greaterthan_symbol' 'mydb.pipes.employee_pipe',
+     START_TIME ='greaterthan_symbol' DATEADD(HOUR,-2,CURRENT_TIMESTAMP()))
+);
+
+// Correct the delimiter to ','
+CREATE OR REPLACE file format mydb.file_formats.csv_fileformat
+    type = csv
+    field_delimiter = ','
+    skip_header = 1
+    empty_field_as_null = TRUE;
+ 
+
+// Load the history files by running Copy command
+COPY INTO mydb.public.emp_data
+FROM @mydb.external_stages.stage_aws_pipes
+FILES = ('sp_employee_3.csv');
+
+
+// Validate the data in the table
+SELECT * FROM mydb.public.emp_data;
+
+===================
+// Managing Pipes
+===================
+
+// How to see pipes?
+DESC PIPE employee_pipe;
+
+SHOW PIPES;
+SHOW PIPES like '%employee%';
+SHOW PIPES in database mydb;
+SHOW PIPES in schema mydb.pipes;
+SHOW PIPES like '%employee%' in Database mydb;
+
+// How to pause a pipe
+ALTER PIPE mydb.pipes.employee_pipe SET PIPE_EXECUTION_PAUSED = true;
+
+
+// Want to modify the copy command
+CREATE OR REPLACE pipe mydb.pipes.employee_pipe
+auto_ingest = TRUE
+AS
+COPY INTO mydb.public.emp_data2
+FROM @mydb.external_stages.stage_aws_pipes
+pattern = '.*employee.*';
+
+
+// How to resume the pipe
+ALTER PIPE mydb.pipes.employee_pipe SET PIPE_EXECUTION_PAUSED = false;
+
+********************************************************************
+==================================================
+Unloading data to external cloud storage locations
+===================================================
+// Create required Database and Schemas
+CREATE DATABASE IF NOT EXISTS MYDB;
+CREATE SCHEMA IF NOT EXISTS MYDB.EXT_STAGES;
+CREATE SCHEMA IF NOT EXISTS MYDB.FILE_FORMATS;
+
+----------------------------
+// Add new aws s3 location to our storage int object to store output files
+
+CREATE OR REPLACE STORAGE INTEGRATION S3_INT
+  TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = S3
+  ENABLED = TRUE
+  STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::555064756008:role/snowflake_access_role2'
+  STORAGE_ALLOWED_LOCATIONS = ('s3://awss3bucketjana/csv/', 's3://awss3bucketjana/json/','s3://awss3bucketjana/pipes/csv/', 's3://awss3bucketjana/output/')
+  COMMENT = 'Integration with aws s3 buckets' ;
+ 
+  OR
+ 
+ALTER STORAGE INTEGRATION S3_INT
+  SET STORAGE_ALLOWED_LOCATIONS = ('s3://awss3bucketjana/csv/', 's3://awss3bucketjana/json/','s3://awss3bucketjana/pipes/csv/', 's3://awss3bucketjana/output/');
+ 
+ 
+// Create file format object
+CREATE OR REPLACE FILE FORMAT MYDB.FILE_FORMATS.CSV_FILEFORMAT
+    type = csv
+    field_delimiter = '|'
+    skip_header = 1
+    empty_field_as_null = TRUE;
+ 
+// Create stage object with integration object & file format object
+// Using the Storeage Integration object that was already created
+
+CREATE OR REPLACE STAGE MYDB.EXT_STAGES.MYS3_OUTPUT
+    URL = 's3://awss3bucketjana/output/'
+    STORAGE_INTEGRATION = s3_int
+    FILE_FORMAT = MYDB.FILE_FORMATS.CSV_FILEFORMAT ;
+ 
+
+// Generate files and store them in the stage location
+COPY INTO @MYDB.EXT_STAGES.MYS3_OUTPUT
+FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER;
+
+//Listing files under my s3 bucket
+LIST @MYDB.EXT_STAGES.MYS3_OUTPUT;
+
+===================
+Unloading Options
+===================
+OVERWRITE = TRUE | FALSE - Specifies to Overwrite existing files
+SINGLE = TRUE | FALSE - Specifies whether to generate a single file or multiple files
+MAX_FILE_SIZE = NUMBER - Maximum file size
+INCLUDE_QUERY_ID = TRUE | FALSE - Specifies whether to uniquely identify unloaded files by including a universally unique identifier
+DETAILED_OUTPUT = TRUE | FALSE - Shows the path and name for each file, its size, and the number of rows that were unloaded to the file.;
+
+
+// We can mentione file name like 'customer', maximum files size
+
+// Specifiy the filename in the copy command
+COPY INTO @MYDB.EXT_STAGES.MYS3_OUTPUT/customer
+FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER;
+
+// MAX_FILE_SIZE
+COPY INTO @MYDB.EXT_STAGES.MYS3_OUTPUT/customer
+FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER
+MAX_FILE_SIZE=2000000;
+
+// Use OVERWRTIE=TRUE
+// If we want to overwrite existing file we can set that to TRUE
+COPY INTO @MYDB.EXT_STAGES.MYS3_OUTPUT/customer
+FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER
+MAX_FILE_SIZE=2000000
+OVERWRITE = TRUE;
+ 
+//Listing files under my s3 bucket
+LIST @MYDB.EXT_STAGES.MYS3_OUTPUT;
+
+//generate single file
+COPY INTO @MYDB.EXT_STAGES.MYS3_OUTPUT/CUST
+FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER
+SINGLE = TRUE;
+
+//detailed output
+COPY INTO @MYDB.EXT_STAGES.MYS3_OUTPUT/cust_data
+FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER
+DETAILED_OUTPUT = TRUE;
+Featured playlist
+******************************************************
+Cache:
+is temporary storage location stores the files or data
+improves peformance from fast processing and reduces the Cost
+
+types:
+Query result cache-(Exists 24 hours) If data is available, we can get them very fast other wise go to local disk size
+local disk cache-if you suspend VW then cache will be removed
+remote desk cache-After 24 hours ,it will go tp remote desk
+
+results cache available on cloud services layer
+
+results cache will be available and can be accessed across different VWs or users
+
+results cache works until underlying data has not changed. smae query should be executed and it will not work for subset data and column reordering
+
+local disk cache is loacted in the VW
+cache the data(not the results) fetched by SQL queries
+fetch data from remote desk and saved it in SSD and memory first time
+Queries can be modified little bit
+
+// Run with X-Small or Small Warehouse
+// Run below queries and observe query profile
+
+// Query is fetching results from Storage layer(Remote Disk)
+SELECT * FROM  TPCH_SF1000.CUSTOMER; -- 2min 20sec
+
+// Fetching METADATA info is very fast, look at query profile
+SELECT COUNT(*) FROM  TPCH_SF1000.CUSTOMER; -- 70ms
+SELECT MIN(C_CUSTKEY) FROM  TPCH_SF1000.CUSTOMER; -- 68 ms
+SELECT MAX(C_CUSTKEY) FROM  TPCH_SF1000.CUSTOMER; -- 64 ms
+
+// Run the same query again and observe time taken and query profile
+SELECT * FROM  TPCH_SF1000.CUSTOMER; -- 113 ms
+
+// Try to fetch same data by changing queries little bit and observe query profile
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER; -- 53 sec
+SELECT C_CUSTKEY, C_ADDRESS FROM TPCH_SF1000.CUSTOMER; -- 36 sec
+SELECT C_ADDRESS, C_CUSTKEY FROM TPCH_SF1000.CUSTOMER; -- 32 sec
+
+// Try to fetch subset of data, with a filter
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER
+    WHERE C_NATIONKEY in (1,2); -- 9.9 sec
+
+==================================================================
+// Turn off Results Cache, Suspend the VW, run same queries and see query profile
+ALTER SESSION SET USE_CACHED_RESULT = FALSE;
+
+// First time, it will fetch the data from Remote Disk
+SELECT * FROM  TPCH_SF1000.CUSTOMER; -- 2min 19sec
+
+// Run the same query again and observe time taken and query profile
+SELECT * FROM  TPCH_SF1000.CUSTOMER; -- 2 min 15sec
+
+// Try to fetch same data by changing queries little bit and observe query profile
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER; -- 53sec
+SELECT C_CUSTKEY, C_ADDRESS FROM TPCH_SF1000.CUSTOMER; -- 34sec
+SELECT C_ADDRESS, C_CUSTKEY FROM TPCH_SF1000.CUSTOMER; -- 34sec
+
+// Try to fetch subset of data, with a filter
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER
+    WHERE C_CUSTKEY LESS_THAN 200000; -- 750 ms
+   
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER
+    WHERE C_NATIONKEY in (1,2,3,4,5); -- 12sec
+==================================================================
+
+// Increase VW size to L or XL, run same queries and see query profile
+
+// First time, it will fetch the data from Remote Disk
+SELECT * FROM  TPCH_SF1000.CUSTOMER; -- 13 sec
+
+// Run the same query again and observe time taken and query profile
+SELECT * FROM  TPCH_SF1000.CUSTOMER; -- 14 sec
+
+// Try to fetch same data by changing queries little bit and observe query profile
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER; -- 4.8sec
+SELECT C_CUSTKEY, C_ADDRESS FROM TPCH_SF1000.CUSTOMER; -- 7.9 sec
+SELECT C_ADDRESS, C_CUSTKEY FROM TPCH_SF1000.CUSTOMER; -- 3.4 sec
+
+// Try to fetch subset of data, with a filter
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER
+    WHERE C_CUSTKEY LESS_THAN 200000; -- 891
+   
+SELECT C_CUSTKEY, C_NAME, C_ACCTBAL, C_ADDRESS FROM TPCH_SF1000.CUSTOMER
+    WHERE C_NATIONKEY in (1,2,3,4,5); -- 1.6 sec
+
+*********************************************************
+
+Time Travel
+
+TT enables accessing historical data ata ny point with in a defined period
+Restoring data-related objects that might have been deleted accedntally
+
+retention period
+
+Key component of time Travel
+It specifies number of days for which this historical data is preserved
+for standrd edition, the retention period is 1 day,can set to 0
+for enter prise and higher editions it is 90 days, it can be set 0-90 days
+retention period 0 means for any object -disable the time Travel
+we can change the retention period by using alter command
+higher retention period, higher storgae cost
+by default it set to 1
+
+Querying historical Data
+1) Specified TIMESTAMP
+2) At some time ago
+3) Before executing any statemnt/query
+
+select * from table at (timesamp=>'Fri,01 may')
+select * from table at (offset=>-60*5);
+select * from table before (statemnet=>'Query id')
+
+Restore object
+when table, schema,or db is dropped , it is not immediately removed from the sysytem
+instead , it is retained for the data retention period fpr the object
+After retention period is completed, we cant restore the objects
+
+undrop table 'Table name'
+undrop table 'table schema'
+undrop table 'DB name'
+
+fail-safe
+
+fail-safe provides a 7-day period dusring which historical data may be recovarable by snowflake
+This period starts immediately after the time travel retention period ends
+We cant restore or query data in fail-safe data
+we need to contact SF support
+data recovery through fail-safe may take several hours to several days to COMPLETE
+After fail-safe period is over , there is no other way to recover the data
+
+
+// where can you see the retention period?
+SHOW TABLES in SCHEMA myown_db.public;
+SHOW SCHEMAS in DATABASE myown_db;
+SHOW DATABASES;
+
+// how to set this at the time of table creation
+CREATE OR REPLACE TABLE myown_db.public.timetravel_ex(id number, name string);
+
+SHOW TABLES like 'timetravel_ex%';
+
+CREATE OR REPLACE TABLE myown_db.public.timetravel_ex(id number, name string)
+DATA_RETENTION_TIME_IN_DAYS = 10;
+
+SHOW TABLES like 'timetravel_ex%';
+
+// setting at schema level
+CREATE SCHEMA myown_db.abcxyz DATA_RETENTION_TIME_IN_DAYS = 10;
+SHOW SCHEMAS like 'abcxyz';
+
+CREATE OR REPLACE TABLE myown_db.abcxyz.timetravel_ex2(id number, name string);
+SHOW TABLES like 'timetravel_ex2%';
+
+CREATE OR REPLACE TABLE myown_db.abcxyz.timetravel_ex2(id number, name string) DATA_RETENTION_TIME_IN_DAYS = 20;
+SHOW TABLES like 'timetravel_ex2%';
+
+
+// dont forget to change your schema back to public on right top corner
+// how to alter retention period later?
+ALTER TABLE myown_db.public.timetravel_ex
+SET DATA_RETENTION_TIME_IN_DAYS = 15;
+
+SHOW TABLES like 'timetravel_ex%';
+
+
+// Querying history data
+
+// Updating some data first
+
+// Case1: update some data in customer table
+
+SELECT * FROM myown_db.public.customer;
+
+SELECT * FROM myown_db.public.customer WHERE CUSTOMERID=1682100334099;
+
+UPDATE myown_db.public.customer SET CUSTNAME='ABCXYZ' WHERE CUSTOMERID=1682100334099;
+
+SELECT * FROM myown_db.public.customer WHERE CUSTOMERID=1682100334099;
+
+=============
+
+// Case2: delete some data from emp_data table
+
+SELECT * FROM myown_db.public.emp_data;
+
+SELECT * FROM myown_db.public.emp_data where id=1;
+
+DELETE FROM myown_db.public.emp_data where id=1;
+
+SELECT CURRENT_TIMESTAMP; -- 2022-07-08 19:47:48.916
+
+SELECT * FROM myown_db.public.emp_data where id=1;
+
+==============
+
+// Case3: update some data in customer table
+
+SELECT * FROM myown_db.public.orders;
+
+SELECT * FROM myown_db.public.orders WHERE ORDER_ID='B-25601';
+
+UPDATE myown_db.public.orders SET AMOUNT=0 WHERE ORDER_ID='B-25601'; -- 01a57b69-0004-25d4-0015-ab8700024536
+
+SELECT * FROM myown_db.public.orders WHERE ORDER_ID='B-25601';
+
+==============
+
+// Case1: retrieve history data by using AT OFFSET
+
+SELECT * FROM myown_db.public.customer WHERE CUSTOMERID=1682100334099;
+
+SELECT * FROM myown_db.public.customer AT (offset = -60*5)
+WHERE CUSTOMERID=1682100334099;
+
+// Case2: retrieve history data by using AT TIMESTAMP
+SELECT * FROM myown_db.public.emp_data where id=1;
+
+SELECT * FROM myown_db.public.emp_data AT(timestamp = '2022-07-08 19:47:48.916'::timestamp)
+WHERE id=1;
+
+
+// Case3: retrieve history data by using BEFORE STATEMENT
+SELECT * FROM myown_db.public.orders WHERE ORDER_ID='B-25601';
+
+SELECT * FROM myown_db.public.orders
+before(statement = '01a57b69-0004-25d4-0015-ab8700024536')
+WHERE ORDER_ID='B-25601';
+
+CREATE TABLE myown_db.public.orders_tt
+AS
+SELECT * FROM myown_db.public.orders
+before(statement = '01a57b69-0004-25d4-0015-ab8700024536');
+
+SELECT * FROM myown_db.public.orders WHERE ORDER_ID='B-25601';
+SELECT * FROM myown_db.public.orders_tt WHERE ORDER_ID='B-25601';
+=================
+
+// Restoring Tables
+SHOW TABLEs like 'customer%';
+DROP TABLE myown_db.public.customer;
+SHOW TABLEs like 'customer%';
+UNDROP TABLE myown_db.public.customer;
+SHOW TABLEs like 'customer%';
+
+// Restoring Schemas
+SHOW SCHEMAS in DATABASE myown_db;
+DROP SCHEMA STAGE_TBLS;
+SHOW SCHEMAS in DATABASE myown_db;
+UNDROP SCHEMA STAGE_TBLS;
+SHOW SCHEMAS in DATABASE myown_db;
+
+====================
+// Time Travel Cost
+
+SELECT * FROM SNOWFLAKE.ACCOUNT_USAGE.TABLE_STORAGE_METRICS;
+
+SELECT * FROM SNOWFLAKE.ACCOUNT_USAGE.TABLE_STORAGE_METRICS
+WHERE TABLE_NAME = 'CUSTOMER_LARGE';
+
+SELECT  ID,
+  TABLE_NAME,
+  TABLE_SCHEMA,
+        TABLE_CATALOG,
+  ACTIVE_BYTES / (1024*1024*1024) AS STORAGE_USED_GB,
+  TIME_TRAVEL_BYTES / (1024*1024*1024) AS TIME_TRAVEL_STORAGE_USED_GB
+FROM SNOWFLAKE.ACCOUNT_USAGE.TABLE_STORAGE_METRICS
+WHERE TABLE_NAME = 'CUSTOMER_LARGE'
+ORDER BY STORAGE_USED_GB DESC,TIME_TRAVEL_STORAGE_USED_GB DESC;
+
+*****************************************************************************
+// Cloning a Table
+CREATE TABLE myown_db.public.customer_clone
+CLONE myown_db.public.customer;
+
+SELECT * FROM myown_db.public.customer;
+SELECT * FROM myown_db.public.customer_clone;
+
+// Cloning Schema
+CREATE SCHEMA myown_db.copy_of_file_formats
+CLONE myown_db.file_formats;
+
+
+// Cloning Database
+CREATE DATABASE myown_db_copy
+CLONE myown_db;
+
+
+//Update data in source and cloned objects and observer both the tables
+
+select * from myown_db.public.customer where customerid=1684012735799;
+UPDATE myown_db.public.customer SET CUSTNAME='ABCDEFGH' WHERE CUSTOMERID=1684012735799;
+select * from myown_db.public.customer where customerid=1684012735799;
+select * from myown_db.public.customer_clone where customerid=1684012735799;
+
+select * from myown_db.public.customer_clone where customerid=1654101252899;
+UPDATE myown_db.public.customer_clone SET CITY='XYZ' WHERE CUSTOMERID=1654101252899;
+select * from myown_db.public.customer_clone where customerid=1654101252899;
+select * from myown_db.public.customer where customerid=1654101252899;
+
+
+//Dropping cloned objects
+DROP DATABASE myown_db_copy;
+DROP SCHEMA myown_db.copy_of_file_formats;
+DROP TABLE myown_db.public.customer_clone;
+
+
+// Clone using Time Travel
+
+SELECT * FROM myown_db.public.customer;
+DELETE FROM myown_db.public.customer;
+SELECT * FROM myown_db.public.customer;
+
+CREATE OR REPLACE TABLE myown_db.PUBLIC.customer_tt_clone
+CLONE myown_db.public.customer at (OFFSET = -60*5);
+
+SELECT * FROM myown_db.public.customer_tt_clone;
+
+********************************************************
+Queries:
+
+// Where to see table type
+
+SHOW TABLES in SCHEMA PUBLIC;
+
+CREATE OR REPLACE TRANSIENT TABLE myown_db.public.tran_table(id number);
+CREATE OR REPLACE TEMPORARY TABLE myown_db.public.temp_table(name string);
+
+SHOW TABLES in SCHEMA PUBLIC;
+
+============================
+ Transient Tables/Schemas
+============================
+// Create transient schema
+CREATE OR REPLACE TRANSIENT SCHEMA myown_db.tran_schema;
+
+SHOW SCHEMAS in DATABASE myown_db;
+
+// Create trans table under this trans schema without trans keyword
+CREATE OR REPLACE TABLE myown_db.tran_schema.tran_table1(name string);
+
+SHOW TABLES in SCHEMA myown_db.tran_schema;
+
+// Can we alter retention period for trans tables?
+ALTER TABLE myown_db.tran_schema.tran_table1
+SET DATA_RETENTION_TIME_IN_DAYS = 2;
+
+// We can restore trans tables within 24 hours
+DROP TABLE myown_db.tran_schema.tran_table1;
+
+SHOW TABLES in SCHEMA myown_db.tran_schema;
+
+UNDROP TABLE myown_db.tran_schema.tran_table1;
+
+SHOW TABLES in SCHEMA myown_db.tran_schema;
+
+===================
+ Temporary Tables
+===================
+// Can we Create temporary schemas/databases - No
+CREATE OR REPLACE TEMPORARY SCHEMA myown_db.temp_schema;
+
+// Create temp tables and insert sample data
+CREATE OR REPLACE TEMPORARY TABLE myown_db.public.temp_table2(name string);
+
+INSERT INTO myown_db.public.temp_table2 values('Ravi');
+INSERT INTO myown_db.public.temp_table2 values('Gopal');
+INSERT INTO myown_db.public.temp_table2 values('Harsha');
+
+// Run this in 2 diff worksheets and observe results
+SELECT * FROM myown_db.public.temp_table2;
+
+// Recreate the table and check the data
+CREATE OR REPLACE TEMPORARY TABLE myown_db.public.temp_table2(name string);
+
+SELECT * FROM myown_db.public.temp_table2;
+
+// Try to restore - but can't restore with same name//
+UNDROP TABLE myown_db.public.temp_table2;
+
+// Rename current table and undrop table - will get dropped table
+ALTER TABLE myown_db.public.temp_table2 RENAME TO myown_db.public.temp_table3;
+
+UNDROP TABLE myown_db.public.temp_table2;
+
+SELECT * FROM myown_db.public.temp_table2;
+
+
+
+// Create a temp table with same name as Perm table
+CREATE TEMPORARY TABLE myown_db.public.emp_data(id number);
+INSERT INTO myown_db.public.emp_data VALUES(20);
+INSERT INTO myown_db.public.emp_data VALUES(47);
+INSERT INTO myown_db.public.emp_data VALUES(35);
+
+// Execute this in two diff worksheets and observer results
+SELECT * FROM myown_db.public_clon.emp_data;
