@@ -1,0 +1,15 @@
+create database mydb2
+create schema mydb2.mytables
+create table mydb2.mytables.supplier 
+as select * from SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.SUPPLIER
+
+select * from supplier
+
+create masking policy supplier_policy
+as (val number) returns number->
+case when current_role() in ('public') then val
+else '0.00'
+end
+
+alter table mydb2.mytables.supplier modify column s_acctbal
+set masking policy supplier_policy
